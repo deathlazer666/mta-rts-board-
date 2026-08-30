@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MTA RT Board</string>
+    <string name="title_activity_main">MTA RT Board</string>
+    <string name="package_name">com.mta.rtboard</string>
+    <string name="custom_url_scheme">com.mta.rtboard</string>
+</resources>

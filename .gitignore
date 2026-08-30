@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+dist/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/*.iml
+*.apk
+*.aab
+.DS_Store
+isolate/

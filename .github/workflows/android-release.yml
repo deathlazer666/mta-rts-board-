@@ -1,0 +1,81 @@
+name: Build Android APK & Release
+
+# Builds an installable Android APK from the web app and attaches it to a
+# GitHub release whenever a version tag (e.g. v0.0.1) is pushed.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static web export
+        run: npm run build
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Sync Capacitor web assets to Android
+        run: npx cap sync android
+
+      - name: Generate upload keystore (ephemeral)
+        run: |
+          keytool -genkeypair -v \
+            -keystore app.keystore \
+            -storepass rtboard-ci \
+            -keypass rtboard-ci \
+            -alias rtboard \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=MTA RT Board, OU=CI, O=Freebuff, L=NY, ST=NY, C=US"
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease \
+            -PKEYSTORE_FILE="$GITHUB_WORKSPACE/app.keystore" \
+            -PKEYSTORE_PASSWORD=rtboard-ci \
+            -PKEYSTORE_ALIAS=rtboard \
+            -PKEYSTORE_KEY_PASSWORD=rtboard-ci
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK="$(ls android/app/build/outputs/apk/release/*.apk | head -n1)"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK found: $APK"
+
+      - name: Create / update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: MTA RT Board ${{ github.ref_name }}
+          body: |
+            Android APK build of the MTA Real-Time Train Board.
+
+            Install the `.apk` on your device (allow "install from unknown sources").
+          files: ${{ steps.apk.outputs.path }}
+          draft: false
+          prerelease: false
