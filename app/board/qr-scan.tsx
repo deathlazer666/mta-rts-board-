@@ -31,6 +31,14 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
     streamRef.current = null;
   }, []);
 
+  // Keep the latest callbacks in refs so the effect only depends on `open`.
+  // Otherwise a parent re-render (e.g. the board's 1s clock tick) would tear
+  // down and restart the camera stream, making the feed flicker on Android.
+  const onStationRef = useRef(onStation);
+  onStationRef.current = onStation;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     doneRef.current = false;
@@ -57,9 +65,13 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
         video.srcObject = stream;
         await video.play();
 
+        let frame = 0;
         const tick = () => {
           if (doneRef.current) return;
           rafRef.current = requestAnimationFrame(tick);
+          // Decode every 4th frame (~15 fps) to keep the live feed smooth on
+          // low-end Android devices; full-rate getImageData can stall the camera.
+          if (++frame % 4 !== 0) return;
           const canvas = canvasRef.current;
           const v = videoRef.current;
           const ctx = canvas?.getContext("2d", { willReadFrequently: true });
@@ -82,7 +94,7 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
             if (station) {
               setFoundName(station.name);
               setStatus(`Station set to ${station.name}`);
-              onStation(station);
+              onStationRef.current(station);
             } else {
               setStatus(`Couldn't identify a station in that code (${code.data.slice(0, 60)}…)`);
             }
@@ -105,16 +117,16 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
   // Auto-close briefly after a successful scan.
   useEffect(() => {
     if (!open || !foundName) return;
-    const t = setTimeout(onClose, 1800);
+    const t = setTimeout(() => onCloseRef.current(), 1800);
     return () => clearTimeout(t);
-  }, [open, foundName, onClose]);
+  }, [open, foundName]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
       <div className="relative flex-1 overflow-hidden">
-        <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
         <canvas ref={canvasRef} className="hidden" />
         {/* Scanning frame */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

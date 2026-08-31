@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ROUTE_ORDER, lineDesignation, routeInfo } from "@/lib/routes";
-import { DEFAULT_STATION_ID, STATIONS, STATION_GROUPS } from "@/lib/stations";
+import { DEFAULT_STATION_ID, STATIONS, STATION_GROUPS, type Station } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
 import { fetchLineStatus, type LineStatusRow } from "@/lib/alerts";
 import QrScanner from "./qr-scan";
@@ -189,6 +189,11 @@ export default function BoardPage() {
       routes: s.routes.includes(id) ? s.routes.filter((r) => r !== id) : [...s.routes, id],
     }));
   }
+
+  // Stable callbacks so the scanner overlay never restarts its camera stream
+  // when the page re-renders (e.g. the clock tick every second).
+  const closeQr = useCallback(() => setQrOpen(false), []);
+  const handleQrStation = useCallback((st: Station) => setSettings((s) => ({ ...s, stationId: st.id })), []);
 
   return (
     <main className="min-h-screen bg-black text-[#e8edf2] font-sans">
@@ -400,8 +405,8 @@ export default function BoardPage() {
 
       <QrScanner
         open={qrOpen}
-        onClose={() => setQrOpen(false)}
-        onStation={(st) => setSettings((s) => ({ ...s, stationId: st.id }))}
+        onClose={closeQr}
+        onStation={handleQrStation}
       />
 
       {settings.showAlerts && (
