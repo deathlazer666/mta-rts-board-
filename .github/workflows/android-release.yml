@@ -67,6 +67,15 @@ jobs:
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           echo "APK found: $APK"
 
+      - name: Compute prerelease flag
+        id: pre
+        run: |
+          if [[ "${{ github.ref_name }}" == *beta* || "${{ github.ref_name }}" == *rc* || "${{ github.ref_name }}" == *preview* ]]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create / update GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -78,4 +87,4 @@ jobs:
             Install the `.apk` on your device (allow "install from unknown sources").
           files: ${{ steps.apk.outputs.path }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.pre.outputs.value }}

@@ -5,6 +5,7 @@ import { ROUTE_ORDER, lineDesignation, routeInfo } from "@/lib/routes";
 import { DEFAULT_STATION_ID, STATIONS, STATION_GROUPS } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
 import { fetchLineStatus, type LineStatusRow } from "@/lib/alerts";
+import QrScanner from "./qr-scan";
 
 const SETTINGS_KEY = "mta-board:settings:v1";
 
@@ -28,8 +29,9 @@ function lineIcon(id: string): string {
   // All shuttle-designated route ids share the NYCS standard S bullet.
   const overrides: Record<string, string> = {
     S: "s", GS: "s", FS: "s", H: "s", SF: "s", SR: "s", SIR: "sir",
-    // 7X = Flushing Express: use the diamond 7 bullet.
-    "7X": "7x", "7x": "7x",
+    // 7X = Flushing Express: use the diamond 7 bullet. 6X / FX (rush-hour
+    // expresses) fall back to their base-line bullet until diamond assets exist.
+    "7X": "7x", "7x": "7x", "6X": "6", "FX": "f",
   };
   return `${overrides[id] ?? id.toLowerCase()}.svg`;
 }
@@ -60,6 +62,7 @@ export default function BoardPage() {
   const [settings, setSettings] = useState<Settings>({ stationId: DEFAULT_STATION_ID, minutes: 30, routes: [], showAlerts: false });
   const [hydrated, setHydrated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
   const [lineStatus, setLineStatus] = useState<LineStatusRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -190,19 +193,43 @@ export default function BoardPage() {
   return (
     <main className="min-h-screen bg-black text-[#e8edf2] font-sans">
       <header className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-        <button
-          onClick={() => setShowSettings((v) => !v)}
-          aria-label="Settings"
-          title="Settings"
-          className="rounded-full shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-        >
-          <img
-            src="/mta-logo.svg"
-            alt="MTA logo"
-            aria-hidden="true"
-            className="w-10 h-10 rounded-full object-contain transition hover:scale-105 active:scale-95"
-          />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSettings((v) => !v)}
+            aria-label="Settings"
+            title="Settings"
+            className="rounded-full shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+          >
+            <img
+              src="/mta-logo.svg"
+              alt="MTA logo"
+              aria-hidden="true"
+              className="w-10 h-10 rounded-full object-contain transition hover:scale-105 active:scale-95"
+            />
+          </button>
+          <button
+            onClick={() => setQrOpen(true)}
+            aria-label="Scan station QR code"
+            title="Scan station QR code"
+            className="shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-7 h-7 text-[#ffd23f] transition hover:scale-105 active:scale-95"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <path d="M14 14h3v3h-3zM21 14h0M14 21h0M18 18h3v3h-3zM21 18h0" />
+            </svg>
+          </button>
+        </div>
         <div className="flex items-center">
           <span className="text-2xl font-bold tabular-nums tracking-wide">{nyTime}</span>
         </div>
@@ -318,7 +345,7 @@ export default function BoardPage() {
                       {isFar ? `evil ${a.routeId} train` : a.headsign}
                     </p>
                     {(() => {
-                      const des = lineDesignation(a.routeId);
+                      const des = lineDesignation(a.routeId, nowMs);
                       if (!des) return null;
                       const express = des === "Express";
                       return (
@@ -370,6 +397,12 @@ export default function BoardPage() {
           })}
         </ul>
       </section>
+
+      <QrScanner
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        onStation={(st) => setSettings((s) => ({ ...s, stationId: st.id }))}
+      />
 
       {settings.showAlerts && (
         <section className="px-5 py-4 border-t border-white/10 space-y-3">

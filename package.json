@@ -1,6 +1,6 @@
 {
   "name": "mta-rt-board",
-  "version": "2.0.0",
+  "version": "1.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +16,7 @@
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "gtfs-realtime-bindings": "^0.0.6",
+    "jsqr": "^1.4.0",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"

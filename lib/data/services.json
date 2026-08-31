@@ -1,0 +1,147 @@
+{
+ "1": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "2": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "3": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "4": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "5": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "6": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "7": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "A": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "C": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "D": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "E": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "F": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "FS": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "G": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "GS": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "J": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "L": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "M": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "N": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "Q": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "R": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "SI": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "H": {
+  "weekday": true,
+  "saturday": true,
+  "sunday": true
+ },
+ "6X": {
+  "weekday": true,
+  "saturday": false,
+  "sunday": false
+ },
+ "7X": {
+  "weekday": true,
+  "saturday": false,
+  "sunday": false
+ },
+ "B": {
+  "weekday": true,
+  "saturday": false,
+  "sunday": false
+ },
+ "FX": {
+  "weekday": true,
+  "saturday": false,
+  "sunday": false
+ },
+ "W": {
+  "weekday": true,
+  "saturday": false,
+  "sunday": false
+ },
+ "Z": {
+  "weekday": true,
+  "saturday": false,
+  "sunday": false
+ }
+}
