@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import { BarcodeScanner, BarcodeFormat, LensFacing } from "@capacitor-mlkit/barcode-scanning";
 import jsQR from "jsqr";
 import { resolveStationFromQr } from "@/lib/qr-station";
 import type { Station } from "@/lib/stations";
@@ -13,12 +15,22 @@ type Props = {
 
 type ScanResult = { name?: string; text: string };
 
-// Scans standard QR codes with the device camera and resolves MTA stations.
-// Every successful decode produces a visible centered confirmation — either
-// "Station set to X" (and the board's station is updated) or a "couldn't
-// identify" card with a retry. Note: MTA's colorful NaviLens codes are
-// proprietary and can't be decoded by a standard QR reader; this reads
-// NaviLens GO / station-info / any standard QR.
+const IS_NATIVE = Capacitor.isNativePlatform();
+
+// Scans QR codes with the device camera and resolves MTA stations.
+//
+// On native (Android/iOS) the scan runs through the ML Kit Barcode Scanning
+// plugin: a native CameraX preview is rendered BEHIND the WebView (the WebView
+// is made transparent by the plugin), so our overlay just draws the viewfinder
+// and confirmation cards on top. This avoids WebView `getUserMedia` entirely,
+// which was unreliable on Android (flicker, and no decodes on Android 14).
+//
+// On web (the Freebuff preview) we fall back to a jsQR-based getUserMedia
+// scanner, which works in regular browsers.
+//
+// Note: MTA's colorful NaviLens codes are proprietary and can't be decoded by
+// any standard QR reader (ML Kit included); this reads NaviLens GO /
+// station-info / any standard QR.
 export default function QrScanner({ open, onClose, onStation }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -32,18 +44,51 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
 
   // Keep the latest callbacks in refs so the effect only depends on `open` and
   // `scanKey`. Otherwise a parent re-render (e.g. the board's 1s clock tick)
-  // would tear down and restart the camera stream, making the feed flicker.
+  // would tear down and restart the camera, making the feed flicker.
   const onStationRef = useRef(onStation);
   onStationRef.current = onStation;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  const stop = useCallback(() => {
+  const stopWeb = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
+
+  const stopNative = useCallback(async () => {
+    try {
+      await BarcodeScanner.stopScan();
+    } catch {
+      // not scanning — fine
+    }
+    try {
+      await BarcodeScanner.removeAllListeners();
+    } catch {
+      // fine
+    }
+    document.documentElement.classList.remove("barcode-scanner-active");
+    document.body.classList.remove("barcode-scanner-active");
+  }, []);
+
+  const handleDecoded = useCallback(
+    (raw: string) => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      const station = resolveStationFromQr(raw);
+      if (station) {
+        navigator.vibrate?.(80);
+        setResult({ name: station.name, text: raw });
+        setStatus(`Station set to ${station.name}`);
+        onStationRef.current(station);
+      } else {
+        setResult({ text: raw });
+        setStatus("Couldn't identify a station in that code");
+      }
+    },
+    []
+  );
 
   const rescan = useCallback(() => {
     setResult(null);
@@ -59,8 +104,54 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
     setResult(null);
     setFatal(null);
     setStatus("Point the camera at an MTA station code");
-    let cancelled = false;
 
+    // --- Native path: ML Kit camera behind the WebView ----------------------
+    if (IS_NATIVE) {
+      let disposed = false;
+      (async () => {
+        try {
+          const perm = await BarcodeScanner.checkPermissions();
+          let camera = perm.camera;
+          if (camera !== "granted") {
+            const req = await BarcodeScanner.requestPermissions();
+            camera = req.camera;
+          }
+          if (disposed) return;
+          if (camera !== "granted") {
+            setFatal("Camera permission denied — enable it for this app in Settings, then try again.");
+            return;
+          }
+          document.documentElement.classList.add("barcode-scanner-active");
+          document.body.classList.add("barcode-scanner-active");
+          const listener = await BarcodeScanner.addListener("barcodesScanned", (event) => {
+            const raw = event.barcodes?.[0]?.rawValue;
+            if (!raw) return;
+            void stopNative().then(() => handleDecoded(raw));
+          });
+          await BarcodeScanner.startScan({
+            formats: [BarcodeFormat.QrCode],
+            lensFacing: LensFacing.Back,
+          });
+          if (disposed) {
+            await listener.remove();
+            void stopNative();
+          }
+        } catch (e) {
+          if (!disposed) {
+            document.documentElement.classList.remove("barcode-scanner-active");
+            document.body.classList.remove("barcode-scanner-active");
+            setFatal((e as Error)?.message || "Camera unavailable. Check permissions.");
+          }
+        }
+      })();
+      return () => {
+        disposed = true;
+        void stopNative();
+      };
+    }
+
+    // --- Web path: getUserMedia + jsQR -------------------------------------
+    let cancelled = false;
     (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
@@ -88,7 +179,7 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
           if (doneRef.current) return;
           rafRef.current = requestAnimationFrame(tick);
           // Decode every 4th frame (~15 fps) to keep the live feed smooth on
-          // low-end Android devices; full-rate getImageData can stall the camera.
+          // low-end devices; full-rate getImageData can stall the camera.
           if (++frame % 4 !== 0) return;
           const canvas = canvasRef.current;
           const v = videoRef.current;
@@ -107,18 +198,8 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
             const img = ctx.getImageData(0, 0, w, h);
             const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
             if (code?.data) {
-              doneRef.current = true;
-              stop();
-              const station = resolveStationFromQr(code.data);
-              if (station) {
-                navigator.vibrate?.(80);
-                setResult({ name: station.name, text: code.data });
-                setStatus(`Station set to ${station.name}`);
-                onStationRef.current(station);
-              } else {
-                setResult({ text: code.data });
-                setStatus("Couldn't identify a station in that code");
-              }
+              stopWeb();
+              handleDecoded(code.data);
             }
           } catch {
             // A bad frame must never kill the scan loop — keep going.
@@ -134,9 +215,9 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
 
     return () => {
       cancelled = true;
-      stop();
+      stopWeb();
     };
-  }, [open, scanKey, stop]);
+  }, [open, scanKey, stopWeb, stopNative, handleDecoded]);
 
   // Auto-close after a successful scan so the confirmation is still visible.
   useEffect(() => {
@@ -148,10 +229,19 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+    // `barcode-scanner-modal` keeps this overlay visible while the native scan
+    // hides the rest of the app (body gets `barcode-scanner-active`); on web
+    // the opaque background is just a safety net behind the <video>.
+    <div
+      className={`barcode-scanner-modal fixed inset-0 z-50 flex flex-col ${IS_NATIVE ? "" : "bg-black"}`}
+    >
       <div className="relative flex-1 overflow-hidden">
-        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
-        <canvas ref={canvasRef} className="hidden" />
+        {!IS_NATIVE && (
+          <>
+            <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+            <canvas ref={canvasRef} className="hidden" />
+          </>
+        )}
 
         {result ? (
           // Centered confirmation / feedback card.
@@ -207,7 +297,8 @@ export default function QrScanner({ open, onClose, onStation }: Props) {
           </div>
         ) : (
           <>
-            {/* Scanning frame */}
+            {/* Scanning frame — the giant shadow dims everything except the
+                hole, through which the (native) camera or web video shows. */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-64 h-64 border-2 border-[#ffd23f] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
             </div>
