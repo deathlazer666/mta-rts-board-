@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ROUTE_ORDER, lineDesignation, routeInfo } from "@/lib/routes";
-import { DEFAULT_STATION_ID, STATIONS } from "@/lib/stations";
+import { DEFAULT_STATION_ID, STATIONS, STATION_GROUPS } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
 import { fetchLineStatus, type LineStatusRow } from "@/lib/alerts";
 
@@ -28,6 +28,8 @@ function lineIcon(id: string): string {
   // All shuttle-designated route ids share the NYCS standard S bullet.
   const overrides: Record<string, string> = {
     S: "s", GS: "s", FS: "s", H: "s", SF: "s", SR: "s", SIR: "sir",
+    // 7X = Flushing Express: use the diamond 7 bullet.
+    "7X": "7x", "7x": "7x",
   };
   return `${overrides[id] ?? id.toLowerCase()}.svg`;
 }
@@ -41,8 +43,7 @@ function fmtDelay(delaySec: number): string {
 function fmtClock(epochSec: number, nowMs: number): string {
   const mins = Math.round((epochSec * 1000 - nowMs) / 60000);
   if (mins < 1) return "Now";
-  if (mins <= 10) return `${mins} min`;
-  return new Date(epochSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${mins} min`;
 }
 
 // Format an epoch second as a New York wall-clock time (12h).
@@ -215,10 +216,14 @@ export default function BoardPage() {
               <select
                 value={settings.stationId}
                 onChange={(e) => setSettings((s) => ({ ...s, stationId: e.target.value }))}
-                className="bg-[#141a22] border border-white/15 rounded-md px-2 py-1.5 text-sm min-w-[220px]"
+                className="bg-[#141a22] border border-white/15 rounded-md px-2 py-1.5 text-sm min-w-[260px]"
               >
-                {STATIONS.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                {STATION_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.stations.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
@@ -229,7 +234,7 @@ export default function BoardPage() {
                 onChange={(e) => setSettings((s) => ({ ...s, minutes: Number(e.target.value) }))}
                 className="bg-[#141a22] border border-white/15 rounded-md px-2 py-1.5 text-sm"
               >
-                {[10, 20, 30, 60, 120].map((m) => (
+                {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130].map((m) => (
                   <option key={m} value={m}>{m} minutes</option>
                 ))}
               </select>
@@ -283,26 +288,34 @@ export default function BoardPage() {
 
         <ul className="flex flex-col gap-px">
           {visible.map((a, i) => {
-            // Flashing like MTA boards: blink the whole row when the train is arriving now (< 1 min).
-            const minsAway = (a.arrivalEpochSec * 1000 - nowMs) / 60000;
-            const isArrivingNow = minsAway < 1;
+            // Flashing like MTA boards: blink the whole row while the countdown
+            // reads "1 min" or "Now". Color follows the displayed text: "1 min"
+            // is yellow, "Now" is green.
+            const clockText = fmtClock(a.arrivalEpochSec, nowMs);
+            const isNow = clockText === "Now";
+            const isOneMin = clockText === "1 min";
+            const isFlashRow = isNow || isOneMin;
+            // 2-4 min countdowns render in MTA green; 100+ min rows are flagged red.
+            const minsLabel = clockText.match(/^(\d+) min$/)?.[1];
+            const isGreenMin = minsLabel != null && Number(minsLabel) >= 2 && Number(minsLabel) <= 4;
+            const isFar = minsLabel != null && Number(minsLabel) >= 100;
             return (
               <li
                 key={`${a.stopId}-${a.routeId}-${a.arrivalEpochSec}-${i}`}
-                className={`flex items-center gap-5 px-4 py-4 bg-white/5 shadow-[0_6px_20px_rgba(0,0,0,0.35)] border border-white/5 ${isArrivingNow ? "flash-arriving" : ""}`}
+                className={`flex items-center gap-5 px-4 py-4 bg-white/5 shadow-[0_6px_20px_rgba(0,0,0,0.35)] border border-white/5 ${isFlashRow ? "flash-arriving" : ""}`}
               >
                 <img
                   src={`/lines/${lineIcon(a.routeId)}`}
                   alt={`${a.routeId} train`}
-                  className="w-10 h-10 shrink-0"
+                  className={`w-10 h-10 shrink-0 ${isFar ? "logo-red" : ""}`}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <p
-                      className="truncate font-bold leading-tight"
+                      className={`truncate font-bold leading-tight ${isFar ? "text-[#ed0a02]" : ""}`}
                       style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
                     >
-                      {a.headsign}
+                      {isFar ? `evil ${a.routeId} train` : a.headsign}
                     </p>
                     {(() => {
                       const des = lineDesignation(a.routeId);
@@ -320,7 +333,7 @@ export default function BoardPage() {
                       );
                     })()}
                   </div>
-                  <p className={`text-xs mt-0.5 ${isArrivingNow ? "text-black" : "text-white/50"}`}>
+                  <p className={`text-xs mt-0.5 ${isFlashRow ? "text-black" : "text-white/50"}`}>
                     {a.direction === "N" ? "Northbound" : "Southbound"} · {a.stopId}
                   </p>
                   {(() => {
@@ -339,10 +352,18 @@ export default function BoardPage() {
                   })()}
                 </div>
                 <span
-                  className={`text-xl font-bold tabular-nums ${isArrivingNow ? "text-[#128F00]" : ""}`}
+                  className={`text-xl font-bold tabular-nums ${
+                    isNow || isOneMin
+                      ? "text-[#ffd23f]"
+                      : isGreenMin
+                        ? "text-[#128F00]"
+                        : isFar
+                          ? "text-[#ed0a02]"
+                          : ""
+                  }`}
                   style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
                 >
-                  {fmtClock(a.arrivalEpochSec, nowMs)}
+                  {clockText}
                 </span>
               </li>
             );

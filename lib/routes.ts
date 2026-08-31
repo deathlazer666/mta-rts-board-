@@ -14,6 +14,7 @@ export const ROUTES: Record<string, RouteInfo> = {
   "5": { id: "5", name: "Lexington Avenue Express", color: "#00933C", textColor: "#FFFFFF" },
   "6": { id: "6", name: "Lexington Avenue Local", color: "#00933C", textColor: "#FFFFFF" },
   "7": { id: "7", name: "Flushing Local", color: "#B933AD", textColor: "#FFFFFF" },
+  "7X": { id: "7X", name: "Flushing Express", color: "#B933AD", textColor: "#FFFFFF" },
   A: { id: "A", name: "8 Avenue Express", color: "#0039A6", textColor: "#FFFFFF" },
   C: { id: "C", name: "8 Avenue Local", color: "#0039A6", textColor: "#FFFFFF" },
   E: { id: "E", name: "8 Avenue Local", color: "#0039A6", textColor: "#FFFFFF" },
@@ -41,7 +42,7 @@ export const ROUTES: Record<string, RouteInfo> = {
 // Local vs Express service type for each line, per the real-world MTA network.
 const LINE_DESIGNATION: Record<string, "Local" | "Express"> = {
   "1": "Local", "2": "Express", "3": "Express",
-  "4": "Express", "5": "Express", "6": "Local", "7": "Local",
+  "4": "Express", "5": "Express", "6": "Local", "7": "Local", "7X": "Express",
   A: "Express", C: "Local", E: "Local",
   B: "Express", D: "Express", F: "Local", M: "Local", G: "Local",
   J: "Local", Z: "Express", L: "Local",

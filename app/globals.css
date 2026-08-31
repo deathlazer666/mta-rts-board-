@@ -27,3 +27,8 @@ body {
 .flash-arriving {
   animation: board-row-flash 0.9s steps(1, end) infinite;
 }
+
+/* Turn a line-bullet logo red (used for trains 100+ minutes away). */
+.logo-red {
+  filter: grayscale(1) brightness(0.45) sepia(1) hue-rotate(-45deg) saturate(8);
+}
