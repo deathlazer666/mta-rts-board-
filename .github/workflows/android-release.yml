@@ -71,7 +71,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: MTA RT Board ${{ github.ref_name }}
+          name: MTA REAL-TIME ${{ github.ref_name }}
           body: |
             Android APK build of the MTA Real-Time Train Board.
 

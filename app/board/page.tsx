@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ROUTE_ORDER, routeInfo } from "@/lib/routes";
+import { ROUTE_ORDER, lineDesignation, routeInfo } from "@/lib/routes";
 import { DEFAULT_STATION_ID, STATIONS } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
 import { fetchLineStatus, type LineStatusRow } from "@/lib/alerts";
@@ -297,12 +297,29 @@ export default function BoardPage() {
                   className="w-10 h-10 shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <p
-                    className="truncate font-bold leading-tight"
-                    style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
-                  >
-                    {a.headsign}
-                  </p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p
+                      className="truncate font-bold leading-tight"
+                      style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                    >
+                      {a.headsign}
+                    </p>
+                    {(() => {
+                      const des = lineDesignation(a.routeId);
+                      if (!des) return null;
+                      const express = des === "Express";
+                      return (
+                        <span
+                          className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 border rounded leading-none ${
+                            express ? "text-[#AB037E] border-[#AB037E]" : "text-[#030EAB] border-[#030EAB]"
+                          }`}
+                          style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                        >
+                          {des}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <p className={`text-xs mt-0.5 ${isArrivingNow ? "text-black" : "text-white/50"}`}>
                     {a.direction === "N" ? "Northbound" : "Southbound"} · {a.stopId}
                   </p>

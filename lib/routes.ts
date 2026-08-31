@@ -38,6 +38,21 @@ export const ROUTES: Record<string, RouteInfo> = {
   SIR: { id: "SIR", name: "Staten Island Railway", color: "#0039A6", textColor: "#FFFFFF" },
 };
 
+// Local vs Express service type for each line, per the real-world MTA network.
+const LINE_DESIGNATION: Record<string, "Local" | "Express"> = {
+  "1": "Local", "2": "Express", "3": "Express",
+  "4": "Express", "5": "Express", "6": "Local", "7": "Local",
+  A: "Express", C: "Local", E: "Local",
+  B: "Express", D: "Express", F: "Local", M: "Local", G: "Local",
+  J: "Local", Z: "Express", L: "Local",
+  N: "Express", Q: "Express", R: "Local", W: "Local",
+  S: "Local", GS: "Local", FS: "Local", SF: "Local", SR: "Local", H: "Local",
+};
+
+export function lineDesignation(id: string): "Local" | "Express" | undefined {
+  return LINE_DESIGNATION[id];
+}
+
 export const ROUTE_ORDER = Object.keys(ROUTES);
 
 export function routeInfo(id: string): RouteInfo {
