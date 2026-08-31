@@ -32,19 +32,3 @@ body {
 .logo-red {
   filter: grayscale(1) brightness(0.45) sepia(1) hue-rotate(-45deg) saturate(8);
 }
-
-/* Native QR scanning: the ML Kit camera preview is rendered behind the
-   WebView, so while the scanner is open we make the page background
-   transparent and hide everything except the scanner overlay. */
-html.barcode-scanner-active,
-body.barcode-scanner-active {
-  background: transparent !important;
-}
-
-body.barcode-scanner-active {
-  visibility: hidden;
-}
-
-.barcode-scanner-modal {
-  visibility: visible;
-}

@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ROUTE_ORDER, lineDesignation, routeInfo } from "@/lib/routes";
 import { DEFAULT_STATION_ID, STATIONS, STATION_GROUPS, type Station } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
 import { fetchLineStatus, type LineStatusRow } from "@/lib/alerts";
-import QrScanner from "./qr-scan";
 
 const SETTINGS_KEY = "mta-board:settings:v1";
 
@@ -62,7 +62,6 @@ export default function BoardPage() {
   const [settings, setSettings] = useState<Settings>({ stationId: DEFAULT_STATION_ID, minutes: 30, routes: [], showAlerts: false });
   const [hydrated, setHydrated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [qrOpen, setQrOpen] = useState(false);
   const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
   const [lineStatus, setLineStatus] = useState<LineStatusRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -190,11 +189,6 @@ export default function BoardPage() {
     }));
   }
 
-  // Stable callbacks so the scanner overlay never restarts its camera stream
-  // when the page re-renders (e.g. the clock tick every second).
-  const closeQr = useCallback(() => setQrOpen(false), []);
-  const handleQrStation = useCallback((st: Station) => setSettings((s) => ({ ...s, stationId: st.id })), []);
-
   return (
     <main className="min-h-screen bg-black text-[#e8edf2] font-sans">
       <header className="flex items-center justify-between px-5 py-4 border-b border-white/10">
@@ -212,30 +206,15 @@ export default function BoardPage() {
               className="w-10 h-10 rounded-full object-contain transition hover:scale-105 active:scale-95"
             />
           </button>
-          <button
-            onClick={() => setQrOpen(true)}
-            aria-label="Scan station QR code"
-            title="Scan station QR code"
-            className="shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="w-7 h-7 text-[#ffd23f] transition hover:scale-105 active:scale-95"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="3" y="3" width="7" height="7" rx="1" />
-              <rect x="14" y="3" width="7" height="7" rx="1" />
-              <rect x="3" y="14" width="7" height="7" rx="1" />
-              <path d="M14 14h3v3h-3zM21 14h0M14 21h0M18 18h3v3h-3zM21 18h0" />
-            </svg>
-          </button>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/directions"
+            className="px-4 py-2 rounded border border-[#ffd23f]/60 text-[#ffd23f] text-sm font-bold hover:bg-[#ffd23f]/10 transition"
+            style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+          >
+            Directions
+          </Link>
           <span className="text-2xl font-bold tabular-nums tracking-wide">{nyTime}</span>
         </div>
       </header>
@@ -402,12 +381,6 @@ export default function BoardPage() {
           })}
         </ul>
       </section>
-
-      <QrScanner
-        open={qrOpen}
-        onClose={closeQr}
-        onStation={handleQrStation}
-      />
 
       {settings.showAlerts && (
         <section className="px-5 py-4 border-t border-white/10 space-y-3">
