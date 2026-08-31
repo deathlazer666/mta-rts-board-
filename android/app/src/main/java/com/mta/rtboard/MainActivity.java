@@ -67,6 +67,10 @@ public class MainActivity extends BridgeActivity {
         window.clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
-        window.setDecorFitsSystemWindows(false);
+        // setDecorFitsSystemWindows only exists on API 30+; calling it on older
+        // devices throws NoSuchMethodError and crashes the app on launch.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+        }
     }
 }
