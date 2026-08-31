@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ROUTE_ORDER, routeInfo } from "@/lib/routes";
 import { DEFAULT_STATION_ID, STATIONS } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
-import { fetchActiveAlerts, type AlertRow } from "@/lib/alerts";
+import { fetchLineStatus, type LineStatusRow } from "@/lib/alerts";
 
 const SETTINGS_KEY = "mta-board:settings:v1";
 
@@ -25,7 +25,10 @@ function loadSettings(): Settings {
 
 // Map a route id to its bundled line-icon SVG from nyc-subway-icons.
 function lineIcon(id: string): string {
-  const overrides: Record<string, string> = { SF: "s", SR: "s", SIR: "sir" };
+  // All shuttle-designated route ids share the NYCS standard S bullet.
+  const overrides: Record<string, string> = {
+    S: "s", GS: "s", FS: "s", H: "s", SF: "s", SR: "s", SIR: "sir",
+  };
   return `${overrides[id] ?? id.toLowerCase()}.svg`;
 }
 
@@ -57,7 +60,7 @@ export default function BoardPage() {
   const [hydrated, setHydrated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
-  const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [lineStatus, setLineStatus] = useState<LineStatusRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -88,6 +91,18 @@ export default function BoardPage() {
         second: "2-digit",
       }).format(new Date(nowMs)),
     [nowMs],
+  );
+
+  // Routes the selected station actually serves (from its live arrivals), used to
+  // scope the MTA service-alert feed even when no route filter is set.
+  const stationRoutes = useMemo(
+    () =>
+      settings.routes.length > 0
+        ? settings.routes
+        : [...new Set(arrivals.map((a) => a.routeId))].filter((r) =>
+            ROUTE_ORDER.includes(r),
+          ),
+    [settings.routes, arrivals],
   );
 
   const fetchArrivals = useCallback(async () => {
@@ -121,19 +136,22 @@ export default function BoardPage() {
   useEffect(() => {
     if (!hydrated) return;
     if (!settings.showAlerts) {
-      setAlerts([]);
+      setLineStatus([]);
       return;
     }
     let cancelled = false;
     const run = async () => {
       try {
-        const rows = await fetchActiveAlerts({
-          stopIds: station?.stopIds ?? [],
-          routeIds: settings.routes.length > 0 ? settings.routes : null,
-        });
-        if (!cancelled) setAlerts(rows);
+        // Per-line service status, decoded from the MTA Mercury extension in the
+        // per-line GTFS-RT feeds (there is no separate subway gtfs-alerts key).
+        setLineStatus(
+          await fetchLineStatus({
+            stopIds: station?.stopIds ?? [],
+            routeIds: stationRoutes.length > 0 ? stationRoutes : null,
+          }),
+        );
       } catch {
-        if (!cancelled) setAlerts([]);
+        if (!cancelled) setLineStatus([]);
       }
     };
     run();
@@ -142,7 +160,7 @@ export default function BoardPage() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [hydrated, settings.showAlerts, settings.routes, station]);
+  }, [hydrated, settings.showAlerts, stationRoutes, station]);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -304,7 +322,7 @@ export default function BoardPage() {
                   })()}
                 </div>
                 <span
-                  className={`text-xl font-bold tabular-nums ${isArrivingNow ? "text-[#ffd23f]" : ""}`}
+                  className={`text-xl font-bold tabular-nums ${isArrivingNow ? "text-[#128F00]" : ""}`}
                   style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
                 >
                   {fmtClock(a.arrivalEpochSec, nowMs)}
@@ -321,51 +339,44 @@ export default function BoardPage() {
             className="text-sm font-bold text-white/80 uppercase tracking-wider"
             style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
           >
-            Active Alerts
+            Service Status
           </h3>
-          {!loading && alerts.length === 0 && (
-            <p className="text-white/40 text-sm">No active service alerts for this station right now.</p>
+          {!loading && lineStatus.length === 0 && (
+            <p className="text-white/40 text-sm">No service-status data available for this station right now.</p>
           )}
-          {alerts.map((al, i) => (
-            <div
-              key={`${al.header}-${i}`}
-              className="px-4 py-3 bg-white/5 border border-white/10"
-            >
-              <p
-                className="text-sm font-bold text-[#ffd23f]"
-                style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
-              >
-                {al.routes.length > 0 ? `${al.routes.join(", ")}: ${al.header}` : al.header}
-              </p>
-              {al.description && (
-                <p className="text-sm text-white/80 mt-0.5 line-clamp-3 whitespace-pre-line">{al.description}</p>
-              )}
-              <dl className="mt-2 space-y-0.5 text-xs">
-                {al.cause && (
-                  <div className="flex gap-2">
-                    <dt className="text-white/40 w-32 shrink-0">Reason</dt>
-                    <dd className="font-bold text-white/90" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
-                      {al.cause}
-                    </dd>
-                  </div>
+          {lineStatus.map((row) => (
+            <div key={row.routeId} className="flex items-center gap-4 px-4 py-3 bg-white/5 border border-white/10">
+              <img
+                src={`/lines/${lineIcon(row.routeId)}`}
+                alt={row.routeId}
+                className="w-9 h-9 shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-[15px] font-bold ${row.good ? "text-[#5fd45f]" : "text-[#ffd23f]"}`}
+                  style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                >
+                  {row.status}
+                </p>
+                {row.header && row.header !== row.status && !row.good && (
+                  <p className="text-xs text-white/70 mt-0.5 line-clamp-2 whitespace-pre-line">{row.header}</p>
                 )}
-                {al.routes.length > 0 && (
-                  <div className="flex gap-2">
-                    <dt className="text-white/40 w-32 shrink-0">Trains affected</dt>
-                    <dd className="font-bold text-white/90" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
-                      {al.routes.join(" · ")}
-                    </dd>
-                  </div>
-                )}
-                {al.resumeSec && (
-                  <div className="flex gap-2">
-                    <dt className="text-white/40 w-32 shrink-0">Service resumes</dt>
-                    <dd className="font-bold text-[#ffd23f]" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
-                      {fmtNyTime(al.resumeSec)}
-                    </dd>
-                  </div>
-                )}
-              </dl>
+              </div>
+              {row.resumeSec ? (
+                <span
+                  className="text-xs font-bold text-white/60 shrink-0"
+                  style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                >
+                  Resumes {fmtNyTime(row.resumeSec)}
+                </span>
+              ) : row.good ? (
+                <span
+                  className="text-xs font-bold text-white/50 shrink-0"
+                  style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                >
+                  On time
+                </span>
+              ) : null}
             </div>
           ))}
         </section>
