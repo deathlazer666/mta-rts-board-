@@ -39,14 +39,34 @@ for (const [stopId, parentId] of Object.entries(PLATFORMS)) {
   byName.set(name, entry);
 }
 
+// Hubs that are physically one 24/7 transfer complex but are split across
+// multiple GTFS parent stations. Selecting any member shows arrivals for EVERY
+// line in the complex. The 42 St underground concourse connects Times Sq-42 St
+// (7, N/Q/R/W), Port Authority Bus Terminal (A/C/E) and Bryant Park (7, B/D/F/M).
+const COMPLEX_GROUPS: Record<string, string[]> = {
+  "Times Sq-42 St": ["Times Sq-42 St", "42 St-Port Authority Bus Terminal", "42 St-Bryant Pk"],
+  "42 St-Port Authority Bus Terminal": ["Times Sq-42 St", "42 St-Port Authority Bus Terminal", "42 St-Bryant Pk"],
+  "42 St-Bryant Pk": ["Times Sq-42 St", "42 St-Port Authority Bus Terminal", "42 St-Bryant Pk"],
+};
+
+function complexStopIds(name: string): string[] | null {
+  const group = COMPLEX_GROUPS[name];
+  if (!group) return null;
+  const members = group
+    .map((memberName) => byName.get(memberName))
+    .filter((m): m is { ids: string[]; stopIds: string[] } => !!m);
+  return [...new Set(members.flatMap((m) => m.stopIds))];
+}
+
 export const STATIONS: Station[] = [...byName.entries()].map(([name, entry]) => {
-  const sorted = [...new Set(entry.stopIds)];
-  const representativeId = entry.ids.sort((a, b) => a.length - b.length)[0];
-  const coords = parentIdToLatLon.get(entry.ids.find((id) => parentIdToLatLon.has(id)) ?? "");
+  const mergedIds = [...new Set(entry.ids)];
+  const mergedStopIds = complexStopIds(name) ?? [...new Set(entry.stopIds)];
+  const representativeId = mergedIds.sort((a, b) => a.length - b.length)[0];
+  const coords = parentIdToLatLon.get(mergedIds.find((id) => parentIdToLatLon.has(id)) ?? "");
   return {
     id: representativeId,
     name,
-    stopIds: sorted.sort(
+    stopIds: mergedStopIds.sort(
       // Keep numbered platforms first, then lettered; N before S within a station.
       (a, b) =>
         feedSortKey(a) - feedSortKey(b) ||

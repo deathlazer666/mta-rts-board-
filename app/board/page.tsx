@@ -4,26 +4,35 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ROUTE_ORDER, routeInfo } from "@/lib/routes";
 import { DEFAULT_STATION_ID, STATIONS } from "@/lib/stations";
 import { fetchArrivals as fetchArrivalsRt, type ArrivalRow } from "@/lib/arrivals";
+import { fetchActiveAlerts, type AlertRow } from "@/lib/alerts";
 
 const SETTINGS_KEY = "mta-board:settings:v1";
 
-type Settings = { stationId: string; minutes: number; routes: string[] };
+type Settings = { stationId: string; minutes: number; routes: string[]; showAlerts: boolean };
 
 function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const s = JSON.parse(raw) as Settings;
-      if (s.stationId && s.minutes && Array.isArray(s.routes)) return s;
+      if (s.stationId && s.minutes && Array.isArray(s.routes)) {
+        return { ...s, showAlerts: s.showAlerts === true };
+      }
     }
   } catch {}
-  return { stationId: DEFAULT_STATION_ID, minutes: 30, routes: [] };
+  return { stationId: DEFAULT_STATION_ID, minutes: 30, routes: [], showAlerts: false };
 }
 
 // Map a route id to its bundled line-icon SVG from nyc-subway-icons.
 function lineIcon(id: string): string {
   const overrides: Record<string, string> = { SF: "s", SR: "s", SIR: "sir" };
   return `${overrides[id] ?? id.toLowerCase()}.svg`;
+}
+
+// Format a feed-reported delay (seconds) as a short "Delayed X min" notice.
+function fmtDelay(delaySec: number): string {
+  const mins = Math.max(1, Math.round(delaySec / 60));
+  return `Delayed ${mins} min`;
 }
 
 function fmtClock(epochSec: number, nowMs: number): string {
@@ -33,11 +42,22 @@ function fmtClock(epochSec: number, nowMs: number): string {
   return new Date(epochSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+// Format an epoch second as a New York wall-clock time (12h).
+function fmtNyTime(epochSec: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(epochSec * 1000));
+}
+
 export default function BoardPage() {
-  const [settings, setSettings] = useState<Settings>({ stationId: DEFAULT_STATION_ID, minutes: 30, routes: [] });
+  const [settings, setSettings] = useState<Settings>({ stationId: DEFAULT_STATION_ID, minutes: 30, routes: [], showAlerts: false });
   const [hydrated, setHydrated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [arrivals, setArrivals] = useState<ArrivalRow[]>([]);
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -97,6 +117,32 @@ export default function BoardPage() {
     const t = setInterval(fetchArrivals, 12000);
     return () => clearInterval(t);
   }, [hydrated, fetchArrivals]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!settings.showAlerts) {
+      setAlerts([]);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const rows = await fetchActiveAlerts({
+          stopIds: station?.stopIds ?? [],
+          routeIds: settings.routes.length > 0 ? settings.routes : null,
+        });
+        if (!cancelled) setAlerts(rows);
+      } catch {
+        if (!cancelled) setAlerts([]);
+      }
+    };
+    run();
+    const t = setInterval(run, 12000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [hydrated, settings.showAlerts, settings.routes, station]);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -172,6 +218,19 @@ export default function BoardPage() {
             </label>
           </div>
 
+          <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={settings.showAlerts}
+              onChange={(e) => setSettings((s) => ({ ...s, showAlerts: e.target.checked }))}
+              className="h-4 w-4 accent-[#ffd23f]"
+            />
+            <span className="font-bold" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+              Active alerts
+            </span>
+            <span className="text-white/40 text-xs">show service alerts below trains</span>
+          </label>
+
           <div>
             <p className="text-white/60 text-sm mb-2">
               Trains to display — {settings.routes.length === 0 ? "all" : `${settings.routes.length} selected`}
@@ -229,6 +288,20 @@ export default function BoardPage() {
                   <p className={`text-xs mt-0.5 ${isArrivingNow ? "text-black" : "text-white/50"}`}>
                     {a.direction === "N" ? "Northbound" : "Southbound"} · {a.stopId}
                   </p>
+                  {(() => {
+                    const isDelayed = (a.delaySec ?? 0) >= 60;
+                    if (!a.skipped && !isDelayed) return null;
+                    return (
+                      <p
+                        className="text-xs font-bold mt-0.5 text-[#ffd23f]"
+                        style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                      >
+                        {a.skipped ? "Not stopping at this station" : ""}
+                        {a.skipped && isDelayed ? " · " : ""}
+                        {isDelayed ? fmtDelay(a.delaySec ?? 0) : ""}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <span
                   className={`text-xl font-bold tabular-nums ${isArrivingNow ? "text-[#ffd23f]" : ""}`}
@@ -241,6 +314,62 @@ export default function BoardPage() {
           })}
         </ul>
       </section>
+
+      {settings.showAlerts && (
+        <section className="px-5 py-4 border-t border-white/10 space-y-3">
+          <h3
+            className="text-sm font-bold text-white/80 uppercase tracking-wider"
+            style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+          >
+            Active Alerts
+          </h3>
+          {!loading && alerts.length === 0 && (
+            <p className="text-white/40 text-sm">No active service alerts for this station right now.</p>
+          )}
+          {alerts.map((al, i) => (
+            <div
+              key={`${al.header}-${i}`}
+              className="px-4 py-3 bg-white/5 border border-white/10"
+            >
+              <p
+                className="text-sm font-bold text-[#ffd23f]"
+                style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+              >
+                {al.routes.length > 0 ? `${al.routes.join(", ")}: ${al.header}` : al.header}
+              </p>
+              {al.description && (
+                <p className="text-sm text-white/80 mt-0.5 line-clamp-3 whitespace-pre-line">{al.description}</p>
+              )}
+              <dl className="mt-2 space-y-0.5 text-xs">
+                {al.cause && (
+                  <div className="flex gap-2">
+                    <dt className="text-white/40 w-32 shrink-0">Reason</dt>
+                    <dd className="font-bold text-white/90" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+                      {al.cause}
+                    </dd>
+                  </div>
+                )}
+                {al.routes.length > 0 && (
+                  <div className="flex gap-2">
+                    <dt className="text-white/40 w-32 shrink-0">Trains affected</dt>
+                    <dd className="font-bold text-white/90" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+                      {al.routes.join(" · ")}
+                    </dd>
+                  </div>
+                )}
+                {al.resumeSec && (
+                  <div className="flex gap-2">
+                    <dt className="text-white/40 w-32 shrink-0">Service resumes</dt>
+                    <dd className="font-bold text-[#ffd23f]" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+                      {fmtNyTime(al.resumeSec)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          ))}
+        </section>
+      )}
     </main>
   );
 }

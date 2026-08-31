@@ -24,6 +24,10 @@ export type ArrivalRow = {
   arrivalEpochSec: number;
   stopId: string;
   feedKey: string;
+  /** Delay reported by the feed, in seconds (trip-level or per-stop). */
+  delaySec?: number;
+  /** True when the feed marks this stop as SKIPPED (train will not stop here). */
+  skipped?: boolean;
 };
 
 export function feedKeyForStopId(stopId: string): string {
@@ -82,13 +86,38 @@ export async function fetchArrivals(opts: {
           const headsign = tripHeadsign !== ""
             ? tripHeadsign
             : (terminusName ?? (lastStopId !== "" ? lastStopId : routeId));
-          for (const stu of tu.stopTimeUpdate) {
+          const stus = tu.stopTimeUpdate;
+          for (let i = 0; i < stus.length; i++) {
+            const stu = stus[i];
             if (!stu.stopId || !stopIds.includes(stu.stopId)) continue;
             // Direction: MTA platform stop-ids carry an N/S suffix (authoritative).
             const suffix = stu.stopId.slice(-1);
             const direction = (suffix === "S" ? "S" : suffix === "N" ? "N" : tu.trip?.directionId === "1" ? "S" : "N") as "N" | "S";
-            const when = protoTime(stu.arrival?.time ?? stu.departure?.time);
+            // SKIPPED = the feed says this train will NOT stop at this station.
+            const skipped = stu.scheduleRelationship === 1;
+            let when = protoTime(stu.arrival?.time ?? stu.departure?.time);
+            // Skipped stops often carry no event time; estimate the pass-through by
+            // interpolating between the nearest timed stops of this same trip.
+            if (!when && skipped) {
+              let prevTime: number | undefined;
+              let nextTime: number | undefined;
+              for (let j = i - 1; j >= 0; j--) {
+                const t = protoTime(stus[j]?.arrival?.time ?? stus[j]?.departure?.time);
+                if (t) { prevTime = t; break; }
+              }
+              for (let j = i + 1; j < stus.length; j++) {
+                const t = protoTime(stus[j]?.arrival?.time ?? stus[j]?.departure?.time);
+                if (t) { nextTime = t; break; }
+              }
+              if (prevTime && nextTime) when = Math.round((prevTime + nextTime) / 2);
+              else when = prevTime ?? nextTime;
+            }
             if (!when || when < cutoff || when > horizon) continue;
+            // Prefer the per-stop delay; fall back to the trip-level delay.
+            const delaySec =
+              protoTime(stu.arrival?.delay) ??
+              protoTime(stu.departure?.delay) ??
+              protoTime(tu.delay);
             arrivals.push({
               routeId,
               direction,
@@ -96,6 +125,8 @@ export async function fetchArrivals(opts: {
               arrivalEpochSec: when,
               stopId: stu.stopId,
               feedKey,
+              delaySec,
+              skipped,
             });
           }
         }
