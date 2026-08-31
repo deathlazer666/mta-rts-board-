@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --board-bg: #0b0f14;
+  --board-bg: #000000;
   --board-fg: #e8edf2;
 }
 
@@ -15,4 +15,15 @@ body {
 
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* MTA-style flashing: when a train is arriving now, blink the entire row's
+   background to white and flip its text to black, like real station signage. */
+@keyframes board-row-flash {
+  0%, 49%   { background-color: rgba(255, 255, 255, 0.10); color: inherit; }
+  50%, 100% { background-color: #ffffff; color: #000000; }
+}
+
+.flash-arriving {
+  animation: board-row-flash 0.9s steps(1, end) infinite;
 }

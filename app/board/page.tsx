@@ -20,6 +20,12 @@ function loadSettings(): Settings {
   return { stationId: DEFAULT_STATION_ID, minutes: 30, routes: [] };
 }
 
+// Map a route id to its bundled line-icon SVG from nyc-subway-icons.
+function lineIcon(id: string): string {
+  const overrides: Record<string, string> = { SF: "s", SR: "s", SIR: "sir" };
+  return `${overrides[id] ?? id.toLowerCase()}.svg`;
+}
+
 function fmtClock(epochSec: number, nowMs: number): string {
   const mins = Math.round((epochSec * 1000 - nowMs) / 60000);
   if (mins < 1) return "Now";
@@ -51,6 +57,19 @@ export default function BoardPage() {
     [settings.stationId],
   );
 
+  // Live clock in New York time, formatted as a digital HH:MM:SS readout.
+  const nyTime = useMemo(
+    () =>
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hourCycle: "h23",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(new Date(nowMs)),
+    [nowMs],
+  );
+
   const fetchArrivals = useCallback(async () => {
     if (!station) return;
     setLoading(true);
@@ -73,13 +92,14 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!hydrated) return;
+    // Keep the clock / flash state in sync with the faster 12s refresh.
     fetchArrivals();
-    const t = setInterval(fetchArrivals, 30000);
+    const t = setInterval(fetchArrivals, 12000);
     return () => clearInterval(t);
   }, [hydrated, fetchArrivals]);
 
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 15000);
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -103,23 +123,24 @@ export default function BoardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0b0f14] text-[#e8edf2] font-sans">
+    <main className="min-h-screen bg-black text-[#e8edf2] font-sans">
       <header className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-[#0039A6] flex items-center justify-center text-white font-black">
-            M
-          </div>
-          <div>
-            <h1 className="text-lg font-bold leading-tight">Real-Time Train Board</h1>
-            <p className="text-xs text-white/50">{station?.name ?? "Select station"} · updates every 30s</p>
-          </div>
-        </div>
         <button
           onClick={() => setShowSettings((v) => !v)}
-          className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 text-sm font-medium"
+          aria-label="Settings"
+          title="Settings"
+          className="rounded-full shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         >
-          ⚙ Settings
+          <img
+            src="/mta-logo.svg"
+            alt="MTA logo"
+            aria-hidden="true"
+            className="w-10 h-10 rounded-full object-contain transition hover:scale-105 active:scale-95"
+          />
         </button>
+        <div className="flex items-center">
+          <span className="text-2xl font-bold tabular-nums tracking-wide">{nyTime}</span>
+        </div>
       </header>
 
       {showSettings && (
@@ -164,11 +185,10 @@ export default function BoardPage() {
                     key={id}
                     onClick={() => toggleRoute(id)}
                     title={info.name}
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold border transition
-                      ${on ? "opacity-100" : "opacity-30 grayscale"}`}
-                    style={{ backgroundColor: info.color, color: info.textColor, borderColor: info.color }}
+                    aria-pressed={on}
+                    className={`rounded transition ${on ? "opacity-100" : "opacity-25 grayscale"}`}
                   >
-                    {id}
+                    <img src={`/lines/${lineIcon(id)}`} alt={id} className="w-8 h-8" />
                   </button>
                 );
               })}
@@ -184,24 +204,38 @@ export default function BoardPage() {
           <p className="text-white/50">No trains in the next {settings.minutes} minutes for the selected routes.</p>
         )}
 
-        <ul className="divide-y divide-white/5">
+        <ul className="flex flex-col gap-px">
           {visible.map((a, i) => {
-            const info = routeInfo(a.routeId);
+            // Flashing like MTA boards: blink the whole row when the train is arriving now (< 1 min).
+            const minsAway = (a.arrivalEpochSec * 1000 - nowMs) / 60000;
+            const isArrivingNow = minsAway < 1;
             return (
-              <li key={`${a.stopId}-${a.routeId}-${a.arrivalEpochSec}-${i}`} className="flex items-center gap-4 py-3">
-                <span
-                  className="w-10 h-10 rounded-full flex items-center justify-center font-black text-lg shrink-0"
-                  style={{ backgroundColor: info.color, color: info.textColor }}
-                >
-                  {a.routeId}
-                </span>
+              <li
+                key={`${a.stopId}-${a.routeId}-${a.arrivalEpochSec}-${i}`}
+                className={`flex items-center gap-5 px-4 py-4 bg-white/5 shadow-[0_6px_20px_rgba(0,0,0,0.35)] border border-white/5 ${isArrivingNow ? "flash-arriving" : ""}`}
+              >
+                <img
+                  src={`/lines/${lineIcon(a.routeId)}`}
+                  alt={`${a.routeId} train`}
+                  className="w-10 h-10 shrink-0"
+                />
                 <div className="flex-1 min-w-0">
-                  <p className="truncate font-medium">{a.headsign}</p>
-                  <p className="text-xs text-white/50">
+                  <p
+                    className="truncate font-bold leading-tight"
+                    style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                  >
+                    {a.headsign}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isArrivingNow ? "text-black" : "text-white/50"}`}>
                     {a.direction === "N" ? "Northbound" : "Southbound"} · {a.stopId}
                   </p>
                 </div>
-                <span className="text-xl font-bold tabular-nums">{fmtClock(a.arrivalEpochSec, nowMs)}</span>
+                <span
+                  className={`text-xl font-bold tabular-nums ${isArrivingNow ? "text-[#ffd23f]" : ""}`}
+                  style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+                >
+                  {fmtClock(a.arrivalEpochSec, nowMs)}
+                </span>
               </li>
             );
           })}
